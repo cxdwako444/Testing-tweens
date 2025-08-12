@@ -1,10 +1,8 @@
--- Mini GUI: Start Tween + Speed slider (5–1000) + ESP (Pets + Base Timers using 'RemainingTime')
--- Best pet (by PET_VALUES) gets green highlight + bigger green label
--- Button: Grab → Deliver (timed) = go to best pet, hold grab at (RemainingTime <= 2.5s), then deliver
+-- ResilienceHarness.lua (fixed full build)
 
 -- ===== CONFIG =====
 local PLOTS_FOLDER_NAME = "Plots"
-local DELIVERY_NEEDLE   = "delivery"   -- substring, e.g. "deliveryhitbox"
+local DELIVERY_NEEDLE   = "delivery"   -- e.g. "deliveryhitbox"
 local TWEEN_SPEED       = 40           -- slider controls 5–1000
 local AGENT_RADIUS      = 2.5
 local AGENT_HEIGHT      = 5.0
@@ -17,12 +15,12 @@ local DIST_INCREASE_MARGIN = 20
 local MAX_REROUTES         = 6
 
 -- ===== SERVICES =====
-local Players                 = game:GetService("Players")
-local TweenService            = game:GetService("TweenService")
-local PathfindingService      = game:GetService("PathfindingService")
-local RunService              = game:GetService("RunService")
-local UserInputService        = game:GetService("UserInputService")
-local ProximityPromptService  = game:GetService("ProximityPromptService")
+local Players                = game:GetService("Players")
+local TweenService           = game:GetService("TweenService")
+local PathfindingService     = game:GetService("PathfindingService")
+local RunService             = game:GetService("RunService")
+local UserInputService       = game:GetService("UserInputService")
+local ProximityPromptService = game:GetService("ProximityPromptService")
 
 local plr = Players.LocalPlayer
 local PG  = plr:WaitForChild("PlayerGui")
@@ -48,29 +46,16 @@ local PET_NAMES = {
 }
 local PET_SET = {} for _,n in ipairs(PET_NAMES) do PET_SET[n]=true end
 
--- ===== PET VALUE TABLE (higher number = better). Based on your list order (later = higher). =====
-local PET_VALUES = {
-	["Noobini Pizzanini"]=1,["Lirili Larila"]=2,["Tim Cheese"]=3,["FluriFlura"]=4,["Talpa Di Fero"]=5,["Svinina Bombardino"]=6,
-	["Pipi Kiwi"]=7,["Trippi Troppi"]=8,["Tung Tung Tung Sahur"]=9,["Gangster Footera"]=10,["Bandito Bobritto"]=11,["Boneca Ambalabu"]=12,
-	["Cacto Hipopotamo"]=13,["Ta Ta Ta Ta Sahur"]=14,["Tric Trac Baraboom"]=15,["Cappuccino Assassino"]=16,["Brr Brr Patapim"]=17,
-	["Trulimero Trulicina"]=18,["Bambini Crostini"]=19,["Bananita Dolphinita"]=20,["Perochello Lemonchello"]=21,
-	["Brri Brri Bicus Dicus Bombicus"]=22,["Avocadini Guffo"]=23,["Salamino Penguino"]=24,["Burbaloni Loliloli"]=25,
-	["Chimpazini Bananini"]=26,["Ballerina Cappuccina"]=27,["Chef Crabracadabra"]=28,["Lionel Cactuseli"]=29,["Glorbo Fruttodrillo"]=30,
-	["Blueberrini Octopusin"]=31,["Strawberelli Flamingelli"]=32,["Pandaccini Bananini"]=33,["Frigo Camelo"]=34,
-	["Orangutini Ananassini"]=35,["Rhino Toasterino"]=36,["Bombardiro Crocodilo"]=37,["Spioniro Golubiro"]=38,
-	["Bombombini Gusini"]=39,["Zibra Zubra Zibralini"]=40,["Tigrilini Watermelini"]=41,["Cavallo Virtuso"]=42,
-	["Gorillo Watermelondrillo"]=43,["Coco Elefanto"]=44,["Girafa Celestre"]=45,["Gattatino Nyanino"]=46,["Matteo"]=47,
-	["Tralalero Tralala"]=48,["Trigoligre Frutonni"]=49,["Espresso Signora"]=50,["Odin Din Din Dun"]=51,["Statutino Libertino"]=52,
-	["Orcalero Orcala"]=53,["Trenostruzzo Turbo 3000"]=54,["Ballerino Lololo"]=55,["Los Crocodillitos"]=56,["Piccione Macchina"]=57,
-	["La Vacca Staturno Saturnita"]=58,["Chimpanzini Spiderini"]=59,["Tortuginni Dragonfruitini"]=60,["Los Tralaleritos"]=61,
-	["Las Tralaleritas"]=62,["Graipuss Medussi"]=63,["Pot Hotspot"]=64,["La Grande Combinasion"]=65,["Nuclearo Dinossauro"]=66,
-	["Garama and Madundung"]=67,["Las Vaquitas Saturnitas"]=68,["Chicleteira Bicicleteira"]=69
-}
+-- ===== PET VALUES (later in list = higher; tweak if you want exact economy) =====
+local PET_VALUES = {}
+do
+	for i, n in ipairs(PET_NAMES) do PET_VALUES[n] = i end
+end
 
 -- ===== “BEST PET” styling =====
-local BEST_FILL     = Color3.fromRGB(60, 255, 120)  -- green highlight
-local BEST_TEXT     = Color3.fromRGB(60, 255, 120)  -- green label
-local BEST_TEXTSIZE = 16                             -- larger than normal (10/12)
+local BEST_FILL     = Color3.fromRGB(60, 255, 120)
+local BEST_TEXT     = Color3.fromRGB(60, 255, 120)
+local BEST_TEXTSIZE = 16
 
 -- ===== UTILS =====
 local function ci(s) return string.lower(s or "") end
@@ -101,8 +86,8 @@ local function addHighlightOn(adoree, fill, outline, ft)
 	return h
 end
 
--- SMALLER, NO-BACKGROUND Billboard for ESP text
-local function addBillboard(part, name, yOffset, textSizePx)
+-- Billboard text (no background)
+local function addBillboard(part, name, yOffset, textSizePx, color)
 	local bb = Instance.new("BillboardGui")
 	bb.Name = name or "Label"
 	bb.AlwaysOnTop = true
@@ -120,7 +105,7 @@ local function addBillboard(part, name, yOffset, textSizePx)
 	tl.TextScaled = false
 	tl.TextSize = textSizePx or 12
 	tl.Font = Enum.Font.Gotham
-	tl.TextColor3 = Color3.new(1,1,1)
+	tl.TextColor3 = color or Color3.new(1,1,1)
 	tl.TextStrokeTransparency = 0.1
 	tl.TextStrokeColor3 = Color3.new(0,0,0)
 	tl.Text = ""
@@ -138,7 +123,7 @@ local function plotsFolder()
 	return nil
 end
 
--- ===== Find best pet currently present =====
+-- ===== Best pet finder (current server) =====
 local function findBestPetInServer()
 	local bestModel, bestScore = nil, -math.huge
 	for _, ch in ipairs(WS:GetChildren()) do
@@ -172,7 +157,6 @@ local function highlightAllPets()
 	for _, ch in ipairs(WS:GetChildren()) do
 		if ch:IsA("Model") and PET_SET[ch.Name] and not petHandles[ch] then
 			local isBest = (bestModel ~= nil and ch == bestModel)
-
 			local fillColor   = isBest and BEST_FILL or Color3.fromRGB(255,230,0)
 			local outlineColor= Color3.fromRGB(0,0,0)
 			local fillTransp  = isBest and 0.25 or 0.35
@@ -182,19 +166,16 @@ local function highlightAllPets()
 			local p = firstPart(ch)
 			if p then
 				local textSize = isBest and BEST_TEXTSIZE or 10
-				local bb, tl = addBillboard(p, "__PetName", 4, textSize)
+				local bb, tl = addBillboard(p, "__PetName", 4, textSize, isBest and BEST_TEXT or nil)
 				tl.Text = ch.Name
-				if isBest then
-					tl.TextColor3 = BEST_TEXT
-					tl.TextStrokeTransparency = 0.05
-				end
+				if isBest then tl.TextStrokeTransparency = 0.05 end
 			end
 			petHandles[ch] = {highlight = h}
 		end
 	end
 end
 
--- Refresh best pet styling while ESP is on
+-- keep best-pet styling fresh
 task.spawn(function()
 	while true do
 		if espOn then
@@ -205,7 +186,7 @@ task.spawn(function()
 	end
 end)
 
--- ===== Base timer ESP (GLOBAL SCAN for 'RemainingTime') =====
+-- ===== Base timer ESP ('RemainingTime' anywhere under each plot) =====
 local baseOverlays = {} -- plotRoot -> {highlight, billboard, label, anchor, sources}
 
 local function findPlotRoot(inst)
@@ -220,8 +201,8 @@ end
 local function findLowestPart(plot)
 	local lowest, ly = nil, math.huge
 	for _, d in ipairs(plot:GetDescendants()) do
-		if d:IsA("BasePart") then
-			if d.Position.Y < ly then ly = d.Position.Y; lowest = d end
+		if d:IsA("BasePart") and d.Position.Y < ly then
+			ly = d.Position.Y; lowest = d
 		end
 	end
 	return lowest
@@ -243,9 +224,7 @@ end
 
 local function startBaseTimersESP()
 	local plots = plotsFolder()
-	if not plots then
-		warn("[TimerESP] Plots folder not found"); return
-	end
+	if not plots then warn("[TimerESP] Plots folder not found"); return end
 
 	local candidates = {}
 	for _, d in ipairs(WS:GetDescendants()) do
@@ -258,10 +237,7 @@ local function startBaseTimersESP()
 		end
 	end
 
-	local plotCount, timerCount = 0, 0
 	for plot, list in pairs(candidates) do
-		plotCount += 1
-		timerCount += #list
 		if not baseOverlays[plot] then
 			local anchor = findLowestPart(plot) or firstPart(plot)
 			if anchor then
@@ -271,16 +247,8 @@ local function startBaseTimersESP()
 				baseOverlays[plot] = {highlight=hl, billboard=bb, label=tl, anchor=anchor, sources=list}
 			end
 		else
-			for _, s in ipairs(list) do
-				table.insert(baseOverlays[plot].sources, s)
-			end
+			for _, s in ipairs(list) do table.insert(baseOverlays[plot].sources, s) end
 		end
-	end
-
-	if timerCount == 0 then
-		warn("[TimerESP] no objects named 'RemainingTime' found")
-	else
-		print(("[TimerESP] plots: %d, timers: %d"):format(plotCount, timerCount))
 	end
 
 	task.spawn(function()
@@ -299,10 +267,10 @@ local function startBaseTimersESP()
 						and string.format("%d:%02d", math.floor(maxSecs/60), math.floor(maxSecs%60))
 						or (tostring(math.floor(maxSecs)).."s")
 					pack.label.Text = txt
-					pack.highlight.FillColor = Color3.fromRGB(255,80,80)   -- closed
+					pack.highlight.FillColor = Color3.fromRGB(255,80,80)
 				else
 					pack.label.Text = "Open"
-					pack.highlight.FillColor = Color3.fromRGB(80,255,120) -- open
+					pack.highlight.FillColor = Color3.fromRGB(80,255,120)
 				end
 			end
 			task.wait(0.25)
@@ -311,14 +279,14 @@ local function startBaseTimersESP()
 end
 
 local function stopBaseTimersESP()
-	for plot, pack in pairs(baseOverlays) do
+	for _, pack in pairs(baseOverlays) do
 		if pack.highlight then pack.highlight:Destroy() end
 		if pack.billboard then pack.billboard:Destroy() end
 	end
 	baseOverlays = {}
 end
 
--- ===== Delivery bind (nearest under Plots) =====
+-- ===== Delivery bind =====
 local myBaseModel, myDeliveryPart
 local function allDeliveriesUnder(plotModel)
 	local out = {}
@@ -350,7 +318,7 @@ local function autoBindMyBase()
 	return false
 end
 
--- ===== PATH + TWEEN (with watchdog) =====
+-- ===== TWEEN + PATH =====
 local activeTween, hbConn, GO_RUNNING = nil, nil, false
 
 local function tweenToPoint(toPos, finalTarget)
@@ -448,7 +416,7 @@ local function goToMyDelivery()
 		local points = computePathPoints(finalTarget)
 		if not points or #points == 0 then
 			if tweenToPoint(finalTarget, finalTarget) then break end
-			reroutes = reroutes + 1
+			reroutes += 1
 			task.wait(0.05)
 			continue
 		end
@@ -461,18 +429,18 @@ local function goToMyDelivery()
 			if not tweenToPoint(points[i], finalTarget) then interrupted = true break end
 		end
 		if not interrupted then break end
-		reroutes = reroutes + 1
+		reroutes += 1
 		task.wait(0.05)
 	end
 	GO_RUNNING = false
 end
 
--- ===== Timed Grab → Deliver helpers =====
+-- ===== Timed Grab → Deliver =====
 local function getRemainingTimeSecondsForPlot(plotModel)
 	if not plotModel then return 0 end
 	local maxSecs = 0
 	for _, d in ipairs(plotModel:GetDescendants()) do
-		if string.lower(d.Name) == "remainingtime" then
+		if ci(d.Name) == "remainingtime" then
 			maxSecs = math.max(maxSecs, readTimerValue(d))
 		end
 	end
@@ -483,8 +451,8 @@ local function findGrabPromptIn(model)
 	if not model then return nil end
 	for _, d in ipairs(model:GetDescendants()) do
 		if d:IsA("ProximityPrompt") then
-			local a = string.lower(d.ActionText or "")
-			local o = string.lower(d.ObjectText or "")
+			local a = ci(d.ActionText or "")
+			local o = ci(d.ObjectText or "")
 			if a:find("grab",1,true) or o:find("grab",1,true) then
 				return d
 			end
@@ -511,12 +479,10 @@ local function findBestPetModelNow()
 	return best
 end
 
-local function goNearModel(model, arriveRadius)
-	arriveRadius = arriveRadius or 10
+local function goNearModel(model)
 	local p = firstPart(model)
 	if not p then return false end
-	local target = p.Position
-	return tweenToPoint(target, target)
+	return tweenToPoint(p.Position, p.Position)
 end
 
 local function holdPrompt(prompt)
@@ -536,70 +502,164 @@ local function grabThenDeliverTimed()
 		end
 	end
 
-	local pet
-	local function grabThenDeliverTimed()
-	if not myDeliveryPart or not myBaseModel then
-		if not autoBindMyBase() then
-			warn("Go near your delivery once so I can bind your base, then try again.")
-			return
-		end
-	end
-
-	-- 1) pick the best pet currently in the server
+	-- 1) best pet now
 	local pet = findBestPetModelNow()
-	if not pet then
-		warn("No pets found right now.")
-		return
-	end
+	if not pet then warn("No pets found right now."); return end
 
-	-- 2) tween to the pet
-	if not goNearModel(pet, 10) then
-		warn("Could not reach the pet.")
-		return
-	end
+	-- 2) go to pet
+	if not goNearModel(pet) then warn("Could not reach the pet."); return end
 
-	-- 3) wait until your base RemainingTime <= 2.5s (cap the wait so we don't hang forever)
+	-- 3) wait until base <= 2.5s (cap 20s to avoid hanging)
 	local cutoff = 2.5
-	local started = time()
+	local t0 = time()
 	while true do
 		local secs = getRemainingTimeSecondsForPlot(myBaseModel)
 		if secs <= cutoff then break end
-		if time() - started > 20 then -- safety net
-			break
-		end
+		if time() - t0 > 20 then break end
 		task.wait(0.1)
 	end
 
-	-- 4) hold the pet's Grab ProximityPrompt (uses its own HoldDuration, typically 1.5s)
+	-- 4) hold grab
 	local prompt = findGrabPromptIn(pet)
-	if not prompt then
-		-- sometimes the prompt appears a tick later
-		task.wait(0.15)
-		prompt = findGrabPromptIn(pet)
-	end
-	if prompt then
-		holdPrompt(prompt)
-	else
-		warn("Grab prompt not found on the pet.")
-	end
+	if not prompt then task.wait(0.15); prompt = findGrabPromptIn(pet) end
+	if prompt then holdPrompt(prompt) else warn("Grab prompt not found on pet.") end
 
-	-- 5) tween to your delivery
+	-- 5) deliver
 	goToMyDelivery()
 end
 
--- === GUI: add the new button and make the panel a bit taller ===
-panel.Size = UDim2.fromOffset(260, 160)
+-- ===== GUI =====
+local GUI = PG:FindFirstChild("BrainrotMini") :: ScreenGui
+if not GUI then
+	GUI = Instance.new("ScreenGui")
+	GUI.Name = "BrainrotMini"
+	GUI.ResetOnSpawn = false
+	GUI.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+	GUI.Parent = PG
+end
 
-local btnHeist = Instance.new("TextButton")
-btnHeist.Size = UDim2.fromOffset(240, 34)
-btnHeist.Position = UDim2.fromOffset(10, 118)
-btnHeist.TextScaled = true
-btnHeist.Text = "Grab → Deliver (timed)"
-btnHeist.Parent = panel
-local cH = Instance.new("UICorner") cH.CornerRadius = UDim.new(0,8) cH.Parent = btnHeist
+local panel = GUI:FindFirstChild("Panel") :: Frame
+if not panel then
+	panel = Instance.new("Frame")
+	panel.Name = "Panel"
+	panel.Size = UDim2.fromOffset(260, 160)
+	panel.Position = UDim2.new(0, 16, 1, -176)
+	panel.BackgroundTransparency = 0.15
+	panel.BackgroundColor3 = Color3.fromRGB(25,25,25)
+	panel.Parent = GUI
+	local c0 = Instance.new("UICorner") c0.CornerRadius = UDim.new(0,8) c0.Parent = panel
 
-btnHeist.MouseButton1Click:Connect(function()
-	task.spawn(grabThenDeliverTimed)
-end)
+	-- Buttons
+	local btnStart = Instance.new("TextButton")
+	btnStart.Name = "BtnStart"
+	btnStart.Size = UDim2.fromOffset(120, 34)
+	btnStart.Position = UDim2.fromOffset(10, 10)
+	btnStart.TextScaled = true
+	btnStart.Text = "Start Tween"
+	btnStart.Parent = panel
+	local c1 = Instance.new("UICorner") c1.CornerRadius = UDim.new(0,8) c1.Parent = btnStart
 
-print("[Heist] Button ready: will go to best pet, time the grab (~2.5s before open), then deliver.")
+	local btnESP = Instance.new("TextButton")
+	btnESP.Name = "BtnESP"
+	btnESP.Size = UDim2.fromOffset(120, 34)
+	btnESP.Position = UDim2.fromOffset(130, 10)
+	btnESP.TextScaled = true
+	btnESP.Text = "ESP (toggle)"
+	btnESP.Parent = panel
+	local c2 = Instance.new("UICorner") c2.CornerRadius = UDim.new(0,8) c2.Parent = btnESP
+
+	-- Slider (5–1000)
+	local sliderLabel = Instance.new("TextLabel")
+	sliderLabel.Name = "LblSpeed"
+	sliderLabel.BackgroundTransparency = 1
+	sliderLabel.TextScaled = true
+	sliderLabel.Text = "Speed: "..tostring(TWEEN_SPEED)
+	sliderLabel.Size = UDim2.fromOffset(240, 18)
+	sliderLabel.Position = UDim2.fromOffset(10, 50)
+	sliderLabel.TextColor3 = Color3.new(1,1,1)
+	sliderLabel.Parent = panel
+
+	local bar = Instance.new("Frame")
+	bar.Name = "Bar"
+	bar.Size = UDim2.fromOffset(240, 6)
+	bar.Position = UDim2.fromOffset(10, 78)
+	bar.BackgroundColor3 = Color3.fromRGB(60,60,60)
+	bar.Parent = panel
+	local c3 = Instance.new("UICorner") c3.CornerRadius = UDim.new(0,3) c3.Parent = bar
+
+	local fill = Instance.new("Frame")
+	fill.Name = "Fill"
+	fill.Size = UDim2.fromOffset(0, 6)
+	fill.Position = UDim2.fromOffset(0, 0)
+	fill.BackgroundColor3 = Color3.fromRGB(120,200,120)
+	fill.Parent = bar
+	local c4 = Instance.new("UICorner") c4.CornerRadius = UDim.new(0,3) c4.Parent = fill
+
+	local knob = Instance.new("Frame")
+	knob.Name = "Knob"
+	knob.Size = UDim2.fromOffset(10, 16)
+	knob.Position = UDim2.fromOffset(0, -5)
+	knob.BackgroundColor3 = Color3.fromRGB(230,230,230)
+	knob.Parent = bar
+	local c5 = Instance.new("UICorner") c5.CornerRadius = UDim.new(0,5) c5.Parent = knob
+
+	local minSpeed, maxSpeed = 5, 1000
+	local dragging = false
+	local function updateSliderFromSpeed()
+		local pct = (TWEEN_SPEED - minSpeed) / (maxSpeed - minSpeed)
+		pct = math.clamp(pct, 0, 1)
+		local px = math.floor(pct * bar.AbsoluteSize.X)
+		fill.Size = UDim2.fromOffset(px, 6)
+		knob.Position = UDim2.fromOffset(px - knob.AbsoluteSize.X/2, -5)
+		sliderLabel.Text = "Speed: "..tostring(TWEEN_SPEED)
+	end
+	local function setSpeedFromX(x)
+		local rel = math.clamp((x - bar.AbsolutePosition.X) / math.max(1, bar.AbsoluteSize.X), 0, 1)
+		local val = math.floor(minSpeed + rel * (maxSpeed - minSpeed))
+		TWEEN_SPEED = math.clamp(val, minSpeed, maxSpeed)
+		updateSliderFromSpeed()
+	end
+	bar.InputBegan:Connect(function(io)
+		if io.UserInputType == Enum.UserInputType.MouseButton1 or io.UserInputType == Enum.UserInputType.Touch then
+			dragging = true
+			setSpeedFromX(UserInputService:GetMouseLocation().X)
+		end
+	end)
+	bar.InputEnded:Connect(function(io)
+		if io.UserInputType == Enum.UserInputType.MouseButton1 or io.UserInputType == Enum.UserInputType.Touch then
+			dragging = false
+		end
+	end)
+	UserInputService.InputChanged:Connect(function(io)
+		if dragging and (io.UserInputType == Enum.UserInputType.MouseMovement or io.UserInputType == Enum.UserInputType.Touch) then
+			setSpeedFromX(UserInputService:GetMouseLocation().X)
+		end
+	end)
+	updateSliderFromSpeed()
+
+	-- Heist button
+	local btnHeist = Instance.new("TextButton")
+	btnHeist.Name = "BtnHeist"
+	btnHeist.Size = UDim2.fromOffset(240, 34)
+	btnHeist.Position = UDim2.fromOffset(10, 118)
+	btnHeist.TextScaled = true
+	btnHeist.Text = "Grab → Deliver (timed)"
+	btnHeist.Parent = panel
+	local cH = Instance.new("UICorner") cH.CornerRadius = UDim.new(0,8) cH.Parent = btnHeist
+
+	-- Hooks
+	btnStart.MouseButton1Click:Connect(function() task.spawn(goToMyDelivery) end)
+	btnESP.MouseButton1Click:Connect(function()
+		espOn = not espOn
+		if espOn then
+			highlightAllPets()
+			startBaseTimersESP()
+		else
+			clearPetESP()
+			stopBaseTimersESP()
+		end
+	end)
+	btnHeist.MouseButton1Click:Connect(function() task.spawn(grabThenDeliverTimed) end)
+end
+
+print("[ResilienceHarness] Loaded: ESP + Timers + Tween + Heist button ready.")
